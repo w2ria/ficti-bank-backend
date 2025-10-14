@@ -1,15 +1,18 @@
 # app/api/v1/endpoints/registration.py
 from fastapi import APIRouter, HTTPException
+import traceback # Útil para depurar errores inesperados
+
+# Importamos las dependencias que preparan la sesión de BD
 from app.api.v1.deps import SessionDep
-from app.schemas.registration import FullClientRegistration  # Mantenemos el schema de entrada
+
+# Importamos el schema que valida los datos de entrada
+from app.schemas.registration import FullClientRegistration
+
+# ¡LA IMPORTACIÓN CLAVE! Importamos nuestro módulo de servicios
 from app.services import registration_service
-import traceback
 
 router = APIRouter()
 
-
-# Cambiamos el response_model porque ya no devolvemos el objeto completo.
-# El status_code 201 (Created) sigue siendo el correcto.
 @router.post("/", status_code=201) 
 def register_full_client(
     *,
@@ -21,11 +24,17 @@ def register_full_client(
     utilizando un procedimiento almacenado.
     """
     try:
-        # Llamamos a nuestra nueva función de servicio que usa el SP
+        # ==================================================================
+        # ¡AQUÍ ES DONDE EL ENDPOINT LLAMA A LA FUNCIÓN DEL SERVICIO!
+        # ==================================================================
+        # Le pasamos la sesión de la base de datos y los datos de registro
+        # que ya fueron validados por FastAPI.
         new_ids = registration_service.register_client_with_sp(
             session=session, reg_data=registration_data
         )
-        # Devolvemos una respuesta clara con los nuevos IDs
+        # ==================================================================
+        
+        # Si el servicio termina sin errores, devolvemos una respuesta de éxito.
         return {"message": "Cliente y usuario registrados con éxito", "generated_ids": new_ids}
     
     except ValueError as ve:
@@ -34,8 +43,8 @@ def register_full_client(
         raise HTTPException(status_code=409, detail=str(ve))
     
     except Exception as e:
-        # print("🔴 OCURRIÓ UN ERROR INESPERADO:")
-        # traceback.print_exc()
+        # Capturamos cualquier otro error inesperado que no sea un ValueError
+        print("🔴 OCURRIÓ UN ERROR INESPERADO EN EL ENDPOINT DE REGISTRO:")
+        traceback.print_exc() # Imprime el error detallado en la consola del servidor
         
-        # Capturamos cualquier otro error inesperado
-        raise HTTPException(status_code=500, detail=f"Ocurrió un error interno: {e}")
+        raise HTTPException(status_code=500, detail=f"Ocurrió un error interno en el servidor.")

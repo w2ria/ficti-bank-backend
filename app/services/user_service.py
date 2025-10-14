@@ -13,16 +13,23 @@ from app.schemas.user import UsuarioCreate, UserFromDB
 
 def authenticate_user_with_sp(session: Session, username: str, password: str) -> Optional[UserFromDB]:
     """
-    Autentica a un usuario llamando al SP sp_ValidateUserLogin.
+    Autentica a un usuario llamando al SP sp_ValidateUserLogin de forma robusta.
     """
     try:
-        query = text("CALL sp_ValidateUserLogin(:p_Username, @_p_Out_Message);")
+        # 1. Preparamos y ejecutamos la llamada al SP.
+        #    Nota: Ya no necesitamos declarar el OUT param para SQLAlchemy aquí.
+        query = text("CALL sp_ValidateUserLogin(:p_Username, @p_Out_Message);")
         result_proxy = session.execute(query, {"p_Username": username})
-        user_data_from_db = result_proxy.mappings().first()
-        session.commit()
         
-        out_params = result_proxy.out_params
-        message_from_db = out_params.get('_p_Out_Message')
+        # 2. Leemos el resultado del SELECT que devuelve el SP.
+        user_data_from_db = result_proxy.mappings().first()
+
+        # 3. ¡EL CAMBIO CLAVE! Ejecutamos una segunda consulta para obtener el valor del parámetro OUT.
+        #    Esta es la forma más explícita y confiable.
+        message_result = session.execute(text("SELECT @p_Out_Message;"))
+        message_from_db = message_result.scalar_one_or_none()
+
+        # --- LÓGICA DE VALIDACIÓN EN PYTHON ---
 
         if "Error:" in (message_from_db or ""):
             print(f"Error desde la BD para usuario '{username}': {message_from_db}")
@@ -40,6 +47,9 @@ def authenticate_user_with_sp(session: Session, username: str, password: str) ->
 
     except Exception as e:
         print(f"🔴 Ocurrió una excepción inesperada durante la autenticación: {e}")
+        # Opcional: para una depuración más profunda, puedes añadir esto:
+        # import traceback
+        # traceback.print_exc()
         return None
 
 
