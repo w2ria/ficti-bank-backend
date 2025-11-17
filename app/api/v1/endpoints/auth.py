@@ -8,25 +8,6 @@ from app.services import user_service
 
 router = APIRouter()
 
-# 1ra versión
-# @router.post("/token", response_model=Token)
-# def login_for_access_token(
-#     session: SessionDep, form_data: Annotated[OAuth2PasswordRequestForm, Depends()]
-# ):
-#     # La lógica aquí usa las funciones actualizadas
-#     user = user_service.authenticate_user(
-#         session=session, username=form_data.username, password=form_data.password
-#     )
-#     if not user:
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail="Usuario o contraseña incorrectos",
-#             headers={"WWW-Authenticate": "Bearer"},
-#         )
-#     # Guardamos el campo "Usuario" en el token
-#     access_token = create_access_token(data={"sub": user.Usuario})
-#     return {"access_token": access_token, "token_type": "bearer"}
-
 @router.post("/token", response_model=Token)
 def login_for_access_token(
     session: SessionDep, 

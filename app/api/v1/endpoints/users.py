@@ -16,12 +16,12 @@ router = APIRouter()
 # 1. REGISTRAR USUARIO
 # ============================================================
 
-@router.post("/", response_model=UsuarioPublic)
-def register_user(session: SessionDep, user_in: UsuarioCreate):
-    try:
-        return user_service.create_user(session=session, user_in=user_in)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+# @router.post("/", response_model=UsuarioPublic)
+# def register_user(session: SessionDep, user_in: UsuarioCreate):
+#     try:
+#         return user_service.create_user(session=session, user_in=user_in)
+#     except Exception as e:
+#         raise HTTPException(status_code=400, detail=str(e))
 
 
 
@@ -29,9 +29,9 @@ def register_user(session: SessionDep, user_in: UsuarioCreate):
 # 2. OBTENER USUARIO ACTUAL
 # ============================================================
 
-@router.get("/me", response_model=UsuarioPublic)
-def read_users_me(current_user: CurrentUser):
-    return current_user
+# @router.get("/me", response_model=UsuarioPublic)
+# def read_users_me(current_user: CurrentUser):
+#     return current_user
 
 
 

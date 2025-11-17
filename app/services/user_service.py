@@ -31,7 +31,7 @@ def authenticate_user_with_sp(session: Session, username: str, password: str) ->
 
         # 3. Obtenemos el valor del parámetro OUT.
         message_result = session.execute(text("SELECT @p_Out_Message;"))
-        message = message_result.scalar_one_or_none()
+        message_from_db = message_result.scalar_one_or_none()
 
         # --- LÓGICA DE VALIDACIÓN EN PYTHON ---
 
