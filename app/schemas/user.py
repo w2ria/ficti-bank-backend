@@ -40,6 +40,10 @@ class UserFromDB(SQLModel):
     HashedPassword: str
     Rol: RolType
     Estado: str
+    email: str
+    codcliente: str
+    nombre_completo: str
+    
 
 
 # ---------------------------------------------------------
