@@ -145,3 +145,29 @@ def listar_empleados(session: Session):
     empleados_filtrados = [emp for emp in empleados if emp.get("Rol") == "E"]
 
     return empleados_filtrados
+from sqlmodel import Session
+from app.schemas.user import StaffRegistrationData
+from passlib.context import CryptContext
+from typing import Dict, Any
+
+# Contexto de hashing para simulación (si no tienes uno ya)
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def register_staff_sp(session: Session, user_data: StaffRegistrationData) -> Dict[str, Any]:
+    """
+    SIMULACIÓN: Hashea la contraseña y llama al SP de la BD para registrar el usuario interno.
+    """
+    
+    # 1. Hashear Contraseña (Simulado)
+    hashed_password = pwd_context.hash(user_data.Password)
+    
+    # 2. Llamada al SP de la BD (DEBES CREAR ESTE SP)
+    # Aquí iría la lógica para llamar a un SP como 'sp_RegistrarUsuarioInterno'.
+    
+    # Simulación de éxito:
+    return {
+        "CodUsu": "USU-" + user_data.Usuario.upper()[:4],
+        "Usuario": user_data.Usuario,
+        "Rol": user_data.Rol,
+        "MensajeSP": f"Éxito: Usuario interno '{user_data.Usuario}' registrado con Rol '{user_data.Rol}'."
+    }
