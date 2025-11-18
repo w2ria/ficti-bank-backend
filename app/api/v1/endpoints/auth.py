@@ -16,33 +16,62 @@ def login_for_access_token(
     """
     Endpoint para el login de usuarios.
     Recibe 'username' y 'password' en un form-data.
-    Devuelve el token Y los datos del usuario en la variable 'result'.
+    Devuelve el token y los datos del usuario en la variable 'result'.
     """
+
     print(f"Intentando autenticar al usuario: {form_data.username}")
 
-    # 1. ¡CAMBIO! La función ahora devuelve una tupla
+    # Llamamos al servicio que maneja la lógica completa del login.
     user, result_data = user_service.authenticate_user_with_sp(
-        session=session, username=form_data.username, password=form_data.password
+        session=session, 
+        username=form_data.username, 
+        password=form_data.password
     )
 
+    # -----------------------------------------------------------
+    # Manejo de errores especiales devueltos desde user_service
+    # -----------------------------------------------------------
+
+    # Caso: la función devolvió un diccionario de error
+    if isinstance(user, dict):
+        error = user.get("error")
+
+        if error == "bloqueado":
+            raise HTTPException(
+                status_code=403,
+                detail="Cuenta bloqueada temporalmente por múltiples intentos fallidos.",
+            )
+
+        if error == "inactivo":
+            raise HTTPException(
+                status_code=403,
+                detail="El usuario está inactivo. Contacte al administrador.",
+            )
+
+        if error == "password":
+            raise HTTPException(
+                status_code=401,
+                detail="Contraseña incorrecta.",
+            )
+
+    # Caso: autenticación fallida completamente (retorno None)
     if not user:
-        # 'user' es None, la autenticación falló
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Nombre de usuario o contraseña incorrectos",
             headers={"WWW-Authenticate": "Bearer"},
         )
-        
-    # Si el login fue exitoso, `user` contiene el objeto UserFromDB.
+
+    # -----------------------------------------------------------
+    # Login exitoso → crear token
+    # -----------------------------------------------------------
     access_token = create_access_token(data={"sub": user.Usuario})
-    
-    # 2. ¡CAMBIO! Convertimos los datos de la lista (que son RowMappings)
-    #    a una lista de diccionarios (JSON)
+
+    # Convertimos los RowMappings en diccionarios JSON
     result_json_list = [dict(row) for row in result_data]
 
-    # 3. ¡CAMBIO! Devolvemos el token Y la variable 'result'
     return {
-        "access_token": access_token, 
+        "access_token": access_token,
         "token_type": "bearer",
-        "result": result_json_list  #
+        "result": result_json_list
     }

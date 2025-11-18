@@ -1,66 +1,125 @@
 # app/services/user_service.py
 
 from typing import Optional, Dict, Any
-from sqlmodel import Session
+from datetime import datetime, timedelta
+
 from sqlalchemy import text
+from sqlmodel import Session, select
+
 from app.core import security
 from app.models.user import Usuario
-from app.schemas.user import UsuarioCreate, UserFromDB, UsuarioUpdate
+from app.schemas.user import (
+    UsuarioCreate,
+    UserFromDB,
+    UsuarioUpdate,
+    StaffRegistrationData
+)
+
+from passlib.context import CryptContext
+
+# ============================================================
+#  CONFIGURACIÓN
+# ============================================================
+
+BLOQUEO_MINUTOS = 15
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 # ============================================================
-# 1. AUTENTICACIÓN CON STORED PROCEDURE
+# 1. AUTENTICACIÓN CON BLOQUEO Y SP
 # ============================================================
 
-def authenticate_user_with_sp(session: Session, username: str, password: str) -> tuple[Optional[UserFromDB], list]:
-    """
-    Autentica a un usuario llamando al SP sp_ValidateUserLogin.
-    
-    DEVUELVE:
-    Una tupla: (UsuarioValidado | None, ListaDeResultadosRaw | ListaVacía)
-    """
-    result_list = []  # Inicializamos la lista de resultados
+def authenticate_user_with_sp(
+    session: Session, username: str, password: str
+) -> tuple[Optional[UserFromDB], list]:
+
+    result_list: list = []
+
     try:
-        # 1. Preparamos y ejecutamos la llamada al SP.
+        # ------------------------------------------------------------
+        # 1) OBTENER USUARIO REAL EN t_usuario
+        # ------------------------------------------------------------
+        statement = select(Usuario).where(Usuario.Usuario == username)
+        user_obj: Optional[Usuario] = session.exec(statement).first()
+
+        if not user_obj:
+            print(f"Usuario '{username}' no existe en t_usuario.")
+            return None, []
+
+        # ------------------------------------------------------------
+        # 2) VALIDAR ESTADO (empleado inactivo NO ingresa)
+        # ------------------------------------------------------------
+        if user_obj.Rol == "E" and user_obj.Estado != "A":
+            print(f"Empleado '{username}' está INACTIVO.")
+            return {"error": "inactivo"}, []
+
+        # ------------------------------------------------------------
+        # 3) BLOQUEO TEMPORAL SI TIENE ≥3 INTENTOS
+        # ------------------------------------------------------------
+        if user_obj.IntentosFallidos >= 3 and user_obj.UltimoIntento:
+            tiempo_transcurrido = datetime.now() - user_obj.UltimoIntento
+
+            if tiempo_transcurrido < timedelta(minutes=BLOQUEO_MINUTOS):
+                print("Usuario bloqueado temporalmente por intentos fallidos.")
+                return {"error": "bloqueado"}, []
+
+            # Ya pasó el tiempo → desbloquear
+            user_obj.IntentosFallidos = 0
+            session.add(user_obj)
+            session.commit()
+
+        # ------------------------------------------------------------
+        # 4) EJECUTAR SP PARA OBTENER DATOS DEL USUARIO
+        # ------------------------------------------------------------
         query = text("CALL sp_ValidateUserLogin(:p_Username, @p_Out_Message);")
         result_proxy = session.execute(query, {"p_Username": username})
-        
-        # 2. ¡CAMBIO CLAVE! Leemos el resultado del SELECT como una LISTA
-        #    Usamos .all() y lo guardamos en 'result_list'
         result_list = result_proxy.mappings().all()
 
-        # 3. Obtenemos el valor del parámetro OUT.
+        # OUT message
         message_result = session.execute(text("SELECT @p_Out_Message;"))
         message_from_db = message_result.scalar_one_or_none()
 
-        # --- LÓGICA DE VALIDACIÓN EN PYTHON ---
-
         if "Error:" in (message_from_db or ""):
-            print(f"Error desde la BD para usuario '{username}': {message_from_db}")
-            return None, []  # Devolvemos (None, lista vacía)
+            print(f"SP error para '{username}': {message_from_db}")
+            return None, []
 
-        # Si la lista está vacía, el usuario no se encontró.
         if not result_list:
-            print(f"Usuario '{username}' no encontrado.")
-            return None, []  # Devolvemos (None, lista vacía)
+            print(f"SP no encontró datos para '{username}'.")
+            return None, []
 
-        # print(f"Datos recibidos de la BD para '{username}': {result_list}")
-        user_data_from_list = result_list[0]
-        
-        # Validamos el modelo Pydantic/SQLModel
-        user = UserFromDB.model_validate(user_data_from_list)
+        user_data = result_list[0]
+        user = UserFromDB.model_validate(user_data)
 
-        # Verificamos la contraseña
+        # ------------------------------------------------------------
+        # 5) VALIDAR CONTRASEÑA
+        # ------------------------------------------------------------
         if not security.verify_password(password, user.HashedPassword):
             print(f"Contraseña incorrecta para '{username}'.")
-            return None, []  # Autenticación fallida, devolvemos (None, lista vacía)
 
-        # ¡Éxito! Devolvemos el objeto User Y la lista 'result'
+            user_obj.IntentosFallidos += 1
+            user_obj.UltimoIntento = datetime.now()
+
+            session.add(user_obj)
+            session.commit()
+            return {"error": "password"}, []
+
+        # ------------------------------------------------------------
+        # 6) LOGIN EXITOSO → RESET
+        # ------------------------------------------------------------
+        user_obj.IntentosFallidos = 0
+        user_obj.UltimoIntento = datetime.now()
+
+        session.add(user_obj)
+        session.commit()
+
+        # ------------------------------------------------------------
+        # 7) RETORNAR RESULTADOS PARA EL ENDPOINT
+        # ------------------------------------------------------------
         return user, result_list
 
     except Exception as e:
-        print(f"🔴 Ocurrió una excepción inesperada durante la autenticación: {e}")
-        return None, []  # Devolvemos (None, lista vacía) en caso de excepción
+        print(f"🔴 Error inesperado en authenticate_user_with_sp: {e}")
+        return None, []
 
 
 # ============================================================
@@ -118,7 +177,7 @@ def update_user(session: Session, codusu: str, data: UsuarioUpdate) -> Dict[str,
 
 
 # ============================================================
-# 4. LISTAR ADMINISTRADORES (SP)
+# 4. LISTAR ADMINISTRADORES
 # ============================================================
 
 def listar_administradores(session: Session):
@@ -128,73 +187,25 @@ def listar_administradores(session: Session):
 
 
 # ============================================================
-# 5. LISTAR EMPLEADOS (SP) → FILTRADO A NIVEL BACKEND
+# 5. LISTAR EMPLEADOS (FILTRADO BACKEND)
 # ============================================================
 
 def listar_empleados(session: Session):
-    """
-    Lista SOLO usuarios con Rol = 'E'
-    (Se filtra en backend para no depender del SP)
-    """
     query = text("CALL sp_ListarEmpleados();")
     result = session.execute(query)
 
     empleados = [dict(row) for row in result.mappings().all()]
+    return [emp for emp in empleados if emp.get("Rol") == "E"]
 
-    # FILTRAR SOLO ROL 'E'
-    empleados_filtrados = [emp for emp in empleados if emp.get("Rol") == "E"]
 
-    return empleados_filtrados
-from sqlmodel import Session
-from app.schemas.user import StaffRegistrationData
-from passlib.context import CryptContext
-from typing import Dict, Any
-
-# Contexto de hashing para simulación (si no tienes uno ya)
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# ============================================================
+# 6. REGISTRO DE STAFF (SIMULACIÓN)
+# ============================================================
 
 def register_staff_sp(session: Session, user_data: StaffRegistrationData) -> Dict[str, Any]:
-    """
-    SIMULACIÓN: Hashea la contraseña y llama al SP de la BD para registrar el usuario interno.
-    """
-    
-    # 1. Hashear Contraseña (Simulado)
-    hashed_password = pwd_context.hash(user_data.Password)
-    
-    # 2. Llamada al SP de la BD (DEBES CREAR ESTE SP)
-    # Aquí iría la lógica para llamar a un SP como 'sp_RegistrarUsuarioInterno'.
-    
-    # Simulación de éxito:
-    return {
-        "CodUsu": "USU-" + user_data.Usuario.upper()[:4],
-        "Usuario": user_data.Usuario,
-        "Rol": user_data.Rol,
-        "MensajeSP": f"Éxito: Usuario interno '{user_data.Usuario}' registrado con Rol '{user_data.Rol}'."
-    }
-from app.schemas.user import StaffRegistrationData
-from sqlmodel import Session
-from passlib.context import CryptContext
-from typing import Dict, Any
 
-# Es posible que ya tengas un contexto de hashing, pero lo definimos aquí por seguridad.
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-def register_staff_sp(session: Session, user_data: StaffRegistrationData) -> Dict[str, Any]:
-    """
-    SIMULACIÓN: Hashea la contraseña y llama al SP de la BD para registrar el usuario interno.
-    """
-    
-    # 1. Simulación de Hashing (si usas passlib)
     hashed_password = pwd_context.hash(user_data.Password)
-    
-    # 2. Lógica de Llamada al SP de la BD (DEBES IMPLEMENTAR ESTO CON TU SP REAL)
-    # Por ahora, simularemos un éxito.
-    
-    # Si quisieras llamar al SP, el código sería similar a:
-    # query = text("CALL sp_RegistrarUsuarioInterno(:usuario, :hash, :rol, ...)")
-    # session.execute(query, { "usuario": user_data.Usuario, "hash": hashed_password, "rol": user_data.Rol, ... })
-    
-    # Simulación de Éxito:
+
     if user_data.Usuario == "fail_test":
         raise ValueError("El usuario ya existe en la base de datos.")
 

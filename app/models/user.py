@@ -1,8 +1,9 @@
 from typing import Optional
+from datetime import datetime
 from sqlmodel import Field, SQLModel
 
 class Usuario(SQLModel, table=True):
-    __tablename__ = "t_usuario"   # ✔ coincide con tu BD real
+    __tablename__ = "t_usuario"
 
     CodUsu: str = Field(primary_key=True, max_length=10)
     Usuario: Optional[str] = Field(default=None, max_length=100, unique=True, index=True)
@@ -10,4 +11,6 @@ class Usuario(SQLModel, table=True):
     Estado: Optional[str] = Field(default=None, max_length=1, foreign_key="t_estado.Estado")
     HashedPassword: str = Field(max_length=255)
 
-    # ✔ Relaciones eliminadas (NO necesarias y causaban errores)
+    # 🆕 Campos para control de login
+    IntentosFallidos: int = Field(default=0)
+    UltimoIntento: Optional[datetime] = Field(default=None)
