@@ -89,3 +89,18 @@ def listar_empleados(session: SessionDep):
         return user_service.listar_empleados(session)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    
+# ============================================================
+# 6. INACTIVAR USUARIO (Store Procedure)
+# ============================================================
+
+@router.patch("/inactivate/{codusu}", response_model=dict)
+def inactivar_usuario(codusu: str, session: SessionDep):
+    """
+    Inactiva un usuario utilizando el SP sp_InactivarUsuario.
+    """
+    try:
+        return user_service.inactivar_usuario_sp(session=session, codusu=codusu)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    

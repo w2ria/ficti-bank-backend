@@ -215,3 +215,30 @@ def register_staff_sp(session: Session, user_data: StaffRegistrationData) -> Dic
         "Rol": user_data.Rol,
         "MensajeSP": f"Éxito: Usuario interno '{user_data.Usuario}' registrado con Rol '{user_data.Rol}'."
     }
+# ============================================================
+# INACTIVAR USUARIO (usa SP)
+# ============================================================
+
+def inactivar_usuario_sp(session: Session, codusu: str) -> dict:
+    try:
+        # Ejecutar SP
+        session.execute(
+            text("CALL sp_InactivarUsuario(:cod, @msg);"),
+            {"cod": codusu}
+        )
+
+        # 🚀 IMPORTANTE: confirmar cambios del SP
+        session.commit()
+
+        # Obtener mensaje OUT
+        result = session.execute(text("SELECT @msg;"))
+        message = result.scalar_one_or_none()
+
+        return {
+            "CodUsu": codusu,
+            "Mensaje": message
+        }
+
+    except Exception as e:
+        session.rollback()
+        raise Exception(f"Error al inactivar usuario: {e}")
