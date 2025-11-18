@@ -54,3 +54,22 @@ class UsuarioUpdate(SQLModel):
     Rol: Optional[RolType] = None    # VALIDADO →
     Estado: Optional[str] = None
     Password: Optional[str] = Field(default=None, min_length=1)
+
+from sqlmodel import SQLModel, Field
+from typing import Optional, Literal
+
+class StaffRegistrationData(SQLModel):
+    """
+    Define los datos necesarios para registrar usuarios internos del banco (Admin o Empleado).
+    """
+    Nombres: str = Field(..., max_length=100, description="Nombres completos del empleado/administrador.")
+    Apellidos: str = Field(..., max_length=100, description="Apellidos completos del empleado/administrador.")
+    Usuario: str = Field(..., max_length=50, description="Nombre de usuario para el login.")
+    Password: str = Field(..., min_length=8, description="Contraseña de acceso.")
+    e_mail: str = Field(..., description="Correo electrónico.")
+    
+    # Restringimos el rol a solo Empleado ('E') o Administrador ('A')
+    Rol: Literal['A', 'E'] = Field(
+        ..., 
+        description="Rol del usuario: 'A' (Administrador) o 'E' (Empleado)."
+    )
